@@ -1,0 +1,11 @@
+# Vercel
+.vercel
+
+# dependencies (none required, but just in case)
+node_modules/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log

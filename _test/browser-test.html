@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>booting…</title>
+  <link rel="stylesheet" href="../css/terminal.css" />
+</head>
+<body class="theme-green">
+  <main id="app" class="app">
+    <section id="terminal" class="terminal">
+      <div id="output" class="output"></div>
+      <div class="input-line" id="inputLine">
+        <span class="prompt" id="prompt">img2css&gt;</span>
+        <span class="cmdline"><span class="mirror" id="mirror"></span><span class="cursor" id="cursor">&nbsp;</span></span>
+        <input id="cmd" class="cmd-input" type="text" />
+      </div>
+    </section>
+    <aside id="preview" class="preview hidden">
+      <header class="preview-head"><span class="preview-title">// preview</span><button id="previewClose" class="preview-close">×</button></header>
+      <div class="preview-body">
+        <div class="preview-col"><div class="preview-label">ORIGINAL</div><div class="preview-stage" id="stageOriginal"></div></div>
+        <div class="preview-col"><div class="preview-label">CSS OUTPUT</div><div class="preview-stage" id="stageCss"><div class="preview-host" id="previewHost"></div></div></div>
+      </div>
+      <style id="previewStyle"></style>
+    </aside>
+  </main>
+  <input id="filePicker" type="file" accept="image/*" class="visually-hidden" />
+  <div id="dropOverlay" class="drop-overlay hidden"><div class="drop-inner">drop image to load</div></div>
+
+  <script src="../js/converter.js"></script>
+  <script src="../js/commands.js"></script>
+  <script src="../js/terminal.js"></script>
+
+  <script>
+    // TEST-ONLY shim: headless virtual-time doesn't advance rAF, so route
+    // the app's typewriter through setTimeout (which virtual time drives).
+    // The real app keeps using requestAnimationFrame.
+    var _rafClock = 0;
+    window.requestAnimationFrame = function (cb) {
+      return setTimeout(function () { _rafClock += 1000; cb(_rafClock); }, 0);
+    };
+    window._err = "";
+    window.addEventListener("error", function (e) { window._err += "\n" + (e.message || e.error); });
+    // Under headless virtual-time, real Worker round-trips don't settle.
+    // Force the main-thread coreBuild path so the async flow completes
+    // deterministically (the Worker path is verified separately).
+    if (location.search.indexOf("worker=1") < 0) { try { window.Worker = undefined; } catch (e) {} }
+  </script>
+  <script>
+    // ---- headless driver: exercises the real app end-to-end ----
+    window.addEventListener("load", function () {
+      var results = [];
+      function check(name, ok) { results.push([name, !!ok]); }
+
+      // build a 4x4 source image with two transparent cells
+      var c = document.createElement("canvas");
+      c.width = 4; c.height = 4;
+      var x = c.getContext("2d");
+      x.clearRect(0, 0, 4, 4);
+      x.fillStyle = "rgb(255,0,0)"; x.fillRect(0, 0, 2, 2);   // red quadrant
+      x.fillStyle = "rgb(0,255,0)"; x.fillRect(2, 2, 2, 2);   // green quadrant
+      x.fillStyle = "rgba(0,0,255,0.5)"; x.fillRect(2, 0, 2, 2); // semi-transparent blue
+      // bottom-left quadrant left fully transparent
+      var url = c.toDataURL();
+
+      var img = new Image();
+      img.onload = function () {
+        run(img, url).then(finish).catch(function (e) {
+          check("no exception", false);
+          window._err = String(e && e.stack || e);
+          finish();
+        });
+      };
+      img.onerror = function () { check("image decoded", false); finish(); };
+      img.src = url;
+
+      function drain(T) {
+        return new Promise(function (res) {
+          var tries = 0;
+          (function loop() {
+            if ((!T._revealing && !T._revealQueue.length) || tries++ > 1000) return res();
+            setTimeout(loop, 0);
+          })();
+        });
+      }
+
+      async function run(img, url) {
+        var C = window.Converter, T = window.term, Cmd = window.Commands;
+        check("Converter present", !!C);
+        check("term present", !!T);
+        check("Commands present", !!Cmd);
+        await drain(T);
+        check("banner rendered", document.getElementById("output").textContent.indexOf("type 'help'") >= 0);
+
+        // load image into the engine the way loadFile would
+        C.image = img; C.objectUrl = url; C.filename = "test.png"; C.fileSize = 256;
+        C.originalW = 4; C.originalH = 4; C.result = null;
+        C.settings.res = 4; C.settings.format = "rgba"; C.settings.blockSize = 1;
+
+        var est = C.estimate();
+        check("estimate counts 16 px", est.count === 16);
+
+        var progressSeen = false;
+        var res = await C.convert({ onProgress: function (p) { if (p > 0) progressSeen = true; } });
+        check("convert produced box-shadow css", /box-shadow/.test(res.fullCss));
+        check("transparent cells skipped (count<16)", res.count > 0 && res.count < 16);
+        check("rgba alpha preserved in output", /rgba\(0,0,255,0?\.5/.test(res.fullCss));
+        check("export html has no <img>", !/<img/i.test(res.fullHtml));
+        check("export html has no <script>", !/<script/i.test(res.fullHtml));
+        check("stats: sizeBytes & timeMs present", res.sizeBytes > 0 && typeof res.timeMs === "number");
+
+        // preview render
+        T.renderPreview(res, url);
+        check("preview pane visible", !document.getElementById("preview").classList.contains("hidden"));
+        check("preview injected real css", /box-shadow/.test(document.getElementById("previewStyle").textContent));
+        check("preview host has the div", document.getElementById("previewHost").innerHTML.indexOf("img2css") >= 0);
+
+        // drive a few commands through the real command loop
+        await Cmd.run("help");
+        await drain(T);
+        check("help lists commands", document.getElementById("output").textContent.indexOf("available commands") >= 0);
+        await Cmd.run("theme amber");
+        check("theme command switched body class", document.body.classList.contains("theme-amber"));
+        await Cmd.run("set res 8");
+        check("set res updated setting", C.settings.res === 8);
+        await Cmd.run("boguscmd");
+        await drain(T);
+        check("unknown command handled", document.getElementById("output").textContent.indexOf("command not found") >= 0);
+
+        // grid method path
+        C.settings.method = "grid";
+        var gres = await C.convert({});
+        check("grid method builds divs", /img2css-grid/.test(gres.fullHtml) && gres.fullHtml.indexOf("background:") >= 0);
+      }
+
+      function finish() {
+        var allPass = results.every(function (r) { return r[1]; });
+        var out = document.createElement("pre");
+        out.id = "TESTRESULT";
+        out.textContent =
+          (allPass ? "ALL_PASS" : "SOME_FAIL") + "\n" +
+          results.map(function (r) { return (r[1] ? "PASS " : "FAIL ") + r[0]; }).join("\n") +
+          (window._err ? "\nERR: " + window._err : "");
+        document.body.appendChild(out);
+        document.title = allPass ? "ALL_PASS" : "SOME_FAIL";
+      }
+    });
+  </script>
+</body>
+</html>

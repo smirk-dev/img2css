@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>img2css — image → pure CSS terminal</title>
+  <meta name="description" content="A fully client-side terminal that converts images into pure CSS (single-element box-shadow)." />
+  <link rel="stylesheet" href="css/terminal.css" />
+</head>
+<body class="theme-green">
+  <main id="app" class="app">
+    <!-- Terminal panel -->
+    <section id="terminal" class="terminal" aria-label="terminal">
+      <div id="output" class="output" role="log" aria-live="polite"></div>
+
+      <div class="input-line" id="inputLine">
+        <span class="prompt" id="prompt">img2css&gt;</span>
+        <span class="cmdline">
+          <span class="mirror" id="mirror"></span><span class="cursor" id="cursor">&nbsp;</span>
+        </span>
+        <input
+          id="cmd"
+          class="cmd-input"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          aria-label="command input" />
+      </div>
+    </section>
+
+    <!-- Preview pane -->
+    <aside id="preview" class="preview hidden" aria-label="preview">
+      <header class="preview-head">
+        <span class="preview-title">// preview</span>
+        <button id="previewClose" class="preview-close" title="hide preview">×</button>
+      </header>
+      <div class="preview-body">
+        <div class="preview-col">
+          <div class="preview-label">ORIGINAL</div>
+          <div class="preview-stage" id="stageOriginal"></div>
+        </div>
+        <div class="preview-col">
+          <div class="preview-label">CSS OUTPUT</div>
+          <div class="preview-stage" id="stageCss">
+            <div class="preview-host" id="previewHost"></div>
+          </div>
+        </div>
+      </div>
+      <style id="previewStyle"></style>
+    </aside>
+  </main>
+
+  <!-- hidden file input used by `upload` / `open` -->
+  <input id="filePicker" type="file" accept="image/*" class="visually-hidden" />
+
+  <!-- drag overlay -->
+  <div id="dropOverlay" class="drop-overlay hidden">
+    <div class="drop-inner">drop image to load</div>
+  </div>
+
+  <script src="js/converter.js"></script>
+  <script src="js/commands.js"></script>
+  <script src="js/terminal.js"></script>
+</body>
+</html>
