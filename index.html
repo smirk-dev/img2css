@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>img2css — image → pure CSS terminal</title>
   <meta name="description" content="A fully client-side terminal that converts images into pure CSS (single-element box-shadow)." />
+  <meta name="theme-color" content="#020a02" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="css/terminal.css" />
 </head>
 <body class="theme-green">
@@ -63,5 +66,15 @@
   <script src="js/converter.js"></script>
   <script src="js/commands.js"></script>
   <script src="js/terminal.js"></script>
+
+  <!-- offline support: register the service worker when served over http(s).
+       Skipped on file:// (where service workers aren't allowed). -->
+  <script>
+    if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("service-worker.js").catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

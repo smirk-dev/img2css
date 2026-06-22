@@ -10,7 +10,8 @@
 
   var THEMES = ["green", "amber", "white", "matrix"];
   var FORMATS = ["hex", "rgb", "rgba"];
-  var METHODS = ["boxshadow", "grid"];
+  var METHODS = ["boxshadow", "grid", "ascii", "gradient"];
+  var DITHERS = ["off", "floyd", "ordered"];
 
   function term() {
     return window.term;
@@ -76,8 +77,9 @@
     var t = term();
     t.print("available commands:", "accent");
     var order = [
-      "help", "upload", "open", "info", "set", "convert",
-      "preview", "copy", "export", "theme", "clear",
+      "help", "upload", "open", "webcam", "info", "set", "convert",
+      "preview", "copy", "export", "stats", "frame", "animate",
+      "share", "theme", "clear",
     ];
     order.forEach(function (k) {
       var c = registry[k];
@@ -86,7 +88,8 @@
     });
     t.print("");
     t.print("settings: set res <n|original> · set blocksize <n> · set format <hex|rgb|rgba>", "muted");
-    t.print("          set method <boxshadow|grid> · set smoothing <on|off> · set reduce <n>", "muted");
+    t.print("          set method <boxshadow|grid|ascii|gradient> · set smoothing <on|off>", "muted");
+    t.print("          set reduce <n> · set dither <off|floyd|ordered>", "muted");
     t.print("themes:   " + THEMES.join(" · "), "muted");
   });
 
@@ -114,6 +117,7 @@
     t.print("method    : " + i.settings.method + " · format " + i.settings.format +
       " · blocksize " + i.settings.blockSize +
       (i.settings.reduce ? " · reduce " + i.settings.reduce : "") +
+      (i.settings.dither !== "off" ? " · dither " + i.settings.dither : "") +
       " · smoothing " + (i.settings.smoothing ? "on" : "off"), "muted");
     var shadows = "~" + commas(i.count) + " shadows";
     var size = "~" + humanBytes(i.bytes) + " css (est.)";
@@ -142,6 +146,7 @@
       t.print("  method     " + s.method, "muted");
       t.print("  smoothing  " + (s.smoothing ? "on" : "off"), "muted");
       t.print("  reduce     " + s.reduce, "muted");
+      t.print("  dither     " + s.dither, "muted");
       return;
     }
 
@@ -188,6 +193,12 @@
         if (isNaN(r) || r < 0) return t.print("reduce must be 0 (off) or a positive step (e.g. 8, 16, 32).", "warn");
         C.settings.reduce = r;
         t.print("reduce = " + r + (r ? " (quantize channels to multiples of " + r + ")" : " (off)"), "accent");
+        break;
+      case "dither":
+        if (DITHERS.indexOf(val) < 0) return t.print("dither must be one of: " + DITHERS.join(", "), "warn");
+        C.settings.dither = val;
+        t.print("dither = " + val + (val === "off" ? "" :
+          " (quantizes to " + (C.settings.reduce > 1 ? "reduce step " + C.settings.reduce : "default step 64") + ")"), "accent");
         break;
       default:
         t.print("unknown setting: " + opt + " — see 'help'", "warn");
@@ -299,8 +310,11 @@
     }
     var ok = await copyText(C.result.fullCss);
     if (ok) {
-      t.print("copied " + humanBytes(C.result.sizeBytes) + " of CSS to clipboard.", "accent");
-      if (C.result.method === "grid") {
+      var label = C.result.method === "ascii" ? "ascii art" : "CSS";
+      t.print("copied " + humanBytes(C.result.sizeBytes) + " of " + label + " to clipboard.", "accent");
+      if (C.result.method === "ascii") {
+        t.print("note: this is text art, not CSS — paste anywhere monospaced.", "muted");
+      } else if (C.result.method === "grid") {
         t.print("note: grid mode also needs the <div> markup — use 'export html' for the full file.", "muted");
       } else {
         t.print('paste it, then add: <div class="img2css"></div>', "muted");
@@ -321,8 +335,13 @@
     var kind = (args[0] || "").toLowerCase();
     var base = (C.filename || "image").replace(/\.[^.]+$/, "") || "img2css";
     if (kind === "css") {
-      download(base + ".img2css.css", C.result.fullCss, "text/css");
-      t.print("downloaded " + base + ".img2css.css (" + humanBytes(C.result.sizeBytes) + ")", "accent");
+      if (C.result.method === "ascii") {
+        download(base + ".img2css.txt", C.result.fullCss, "text/plain");
+        t.print("downloaded " + base + ".img2css.txt (" + humanBytes(C.result.sizeBytes) + ") — ascii art.", "accent");
+      } else {
+        download(base + ".img2css.css", C.result.fullCss, "text/css");
+        t.print("downloaded " + base + ".img2css.css (" + humanBytes(C.result.sizeBytes) + ")", "accent");
+      }
     } else if (kind === "html") {
       download(base + ".img2css.html", C.result.fullHtml, "text/html");
       t.print("downloaded " + base + ".img2css.html (" + humanBytes(C.result.htmlBytes) +
@@ -350,6 +369,168 @@
   // clear ------------------------------------------------------------
   def("clear", "clear the scrollback", "clear", function () {
     term().clear();
+  });
+
+  // stats ------------------------------------------------------------
+  def("stats", "size/timing breakdown of the last conversion", "stats", async function () {
+    var t = term();
+    var C = window.Converter;
+    var r = C.result;
+    if (!r) {
+      t.print("nothing converted yet — run 'convert' first.", "warn");
+      return;
+    }
+    var unit = r.method === "grid" ? "cells" : r.method === "ascii" ? "chars" : "shadows";
+    t.print("last conversion:", "accent");
+    t.print("  method     " + r.method + " · " + r.format + " · blocksize " + r.blockSize, "muted");
+    t.print("  dimensions " + r.width + " × " + r.height + " px  (" + commas(r.width * r.height) + " source px)", "muted");
+    t.print("  painted    " + commas(r.count) + " " + unit +
+      "  (" + (100 - Math.round((r.count / (r.width * r.height)) * 100)) + "% transparent/skipped)", "muted");
+    t.print("  raw size   " + humanBytes(r.sizeBytes) + "  (" +
+      (r.sizeBytes / Math.max(1, r.count)).toFixed(1) + " B/" + unit.replace(/s$/, "") + ")", "muted");
+    t.print("  html size  " + humanBytes(r.htmlBytes), "muted");
+    t.print("  build time " + r.timeMs + " ms", "muted");
+    var gz = await C.gzipSize(r.fullCss);
+    if (gz != null) {
+      var ratio = (r.sizeBytes / Math.max(1, gz)).toFixed(1);
+      t.print("  gzipped    " + humanBytes(gz) + "  (" + ratio + "× smaller — repetitive output compresses well)", "accent");
+    } else {
+      t.print("  gzipped    (CompressionStream unavailable in this browser)", "muted");
+    }
+  });
+
+  // frame / animate --------------------------------------------------
+  def("frame", "manage animation frames", "frame <add|list|clear>", async function (args) {
+    var t = term();
+    var C = window.Converter;
+    var sub = (args[0] || "").toLowerCase();
+    if (sub === "add") {
+      if (!C.hasImage()) return t.print("load an image first, then 'frame add'.", "warn");
+      if (C.settings.method !== "boxshadow") {
+        t.print("frames use the box-shadow method — switching method to boxshadow.", "muted");
+        C.settings.method = "boxshadow";
+      }
+      var prog = t.beginProgress("capturing frame");
+      try {
+        var r = await C.convert({ onProgress: function (p) { prog.update(p); } });
+        prog.done();
+        if (C.frames.length && (C.frames[0].width !== r.width || C.frames[0].height !== r.height)) {
+          t.print("! frame size " + r.width + "×" + r.height + " differs from frame 1 (" +
+            C.frames[0].width + "×" + C.frames[0].height + "). 'animate' uses frame 1's box.", "warn");
+        }
+        C.frames.push({ value: r.cssRule.match(/box-shadow:\n\s*([\s\S]*);\n}/)[1], width: r.width, height: r.height, blockSize: r.blockSize, count: r.count });
+        t.print("frame " + C.frames.length + " captured (" + commas(r.count) + " shadows). 'animate <sec>' when ready.", "accent");
+      } catch (err) {
+        prog.fail();
+        t.print("frame capture failed: " + err.message, "err");
+      }
+    } else if (sub === "clear") {
+      C.frames = [];
+      t.print("frames cleared.", "accent");
+    } else {
+      if (!C.frames.length) { t.print("no frames yet — 'frame add' captures the current image.", "muted"); return; }
+      t.print(C.frames.length + " frame(s):", "accent");
+      C.frames.forEach(function (f, n) {
+        t.print("  " + (n + 1) + ": " + f.width + "×" + f.height + " · " + commas(f.count) + " shadows", "muted");
+      });
+    }
+  });
+
+  def("animate", "build a pure-CSS @keyframes animation from frames", "animate <seconds>", function (args) {
+    var t = term();
+    var C = window.Converter;
+    if (C.frames.length < 2) {
+      t.print("need at least 2 frames — use 'frame add' on each image first.", "warn");
+      return;
+    }
+    var secs = parseFloat(args[0]);
+    if (!(secs > 0)) secs = C.frames.length * 0.5;
+    var f0 = C.frames[0];
+    var bs = f0.blockSize;
+    var n = C.frames.length;
+    var keys = [];
+    for (var k = 0; k < n; k++) {
+      var startPct = (k / n) * 100;
+      var endPct = ((k + 1) / n) * 100 - 0.001;
+      var sh = "    box-shadow:\n      " + C.frames[k].value + ";";
+      keys.push("  " + startPct.toFixed(3) + "% {\n" + sh + "\n  }");
+      keys.push("  " + endPct.toFixed(3) + "% {\n" + sh + "\n  }");
+    }
+    var header = "/* img2css animation — " + n + " frames, " + secs + "s loop, " + f0.width + "×" + f0.height + " */";
+    var cssRule =
+      ".img2css {\n" +
+      "  width: " + bs + "px; height: " + bs + "px; background: transparent;\n" +
+      "  animation: img2css-anim " + secs + "s infinite;\n}\n" +
+      "@keyframes img2css-anim {\n" + keys.join("\n") + "\n}";
+    var fullCss = header + "\n" + cssRule + "\n";
+    var htmlBody = '<div class="img2css"></div>';
+    var fullHtml =
+      "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" +
+      "<title>img2css animation</title>\n<style>\n" + header + "\n" +
+      "html,body{margin:0;background:#fff;}\n.img2css-stage{padding:24px;display:inline-block;}\n" +
+      cssRule + "\n</style>\n</head>\n<body>\n<div class=\"img2css-stage\">\n  " + htmlBody + "\n</div>\n</body>\n</html>\n";
+
+    // stash as the active result so copy/export/preview all work
+    C.result = {
+      method: "boxshadow", width: f0.width, height: f0.height, blockSize: bs,
+      format: C.settings.format, count: f0.count, cssRule: cssRule, htmlBody: htmlBody,
+      fullCss: fullCss, fullHtml: fullHtml,
+      sizeBytes: new Blob([fullCss]).size, htmlBytes: new Blob([fullHtml]).size,
+      timeMs: 0, previewSafe: f0.count <= C.limits.PREVIEW,
+    };
+    t.print("✓ animation built — " + n + " frames · " + secs + "s loop · " +
+      humanBytes(C.result.sizeBytes) + " css", "accent");
+    t.print("'preview' to watch it · 'copy' / 'export html' to keep it. (pure CSS, no JS)", "muted");
+  });
+
+  // webcam -----------------------------------------------------------
+  def("webcam", "capture a still from your camera", "webcam", async function () {
+    var t = term();
+    var C = window.Converter;
+    t.print("requesting camera… (allow access in the browser prompt)", "muted");
+    try {
+      var info = await C.webcam();
+      t.print("> captured webcam frame (" + info.originalW + "×" + info.originalH + ")", "accent");
+      var cls = info.count > C.limits.WARN ? "warn" : "muted";
+      t.print("suggested res " + info.targetW + "px → " + info.targetW + "×" + info.targetH +
+        " (~" + commas(info.count) + " shadows). 'convert' to build.", cls);
+      t.showOriginal(C.objectUrl);
+    } catch (err) {
+      t.print("webcam failed: " + err.message, "err");
+    }
+  });
+
+  // share ------------------------------------------------------------
+  def("share", "make a shareable link (settings + image in the URL)", "share", async function () {
+    var t = term();
+    var C = window.Converter;
+    if (!C.hasImage()) {
+      t.print("load an image first — 'share' embeds it in the link.", "warn");
+      return;
+    }
+    var snap = C.snapshotDataUrl();
+    if (!snap) { t.print("could not snapshot the image.", "err"); return; }
+    var payload = { v: 1, s: C.settings, img: snap };
+    var encoded;
+    try {
+      encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    } catch (e) {
+      t.print("could not encode the link.", "err");
+      return;
+    }
+    var base = location.origin && location.origin !== "null"
+      ? location.origin + location.pathname
+      : location.href.split("#")[0];
+    var link = base + "#i=" + encoded;
+    if (link.length > 1500000) {
+      t.print("! link is very large (" + humanBytes(link.length) + ") — lower 'set res' before sharing.", "warn");
+    }
+    var ok = await copyText(link);
+    t.print((ok ? "copied " : "") + "share link (" + humanBytes(link.length) + ", image embedded at " +
+      C.targetDims().w + "×" + C.targetDims().h + "):", "accent");
+    t.print(ok ? "  paste it anywhere — opening it restores the image + settings." :
+      "  clipboard blocked; here it is:", "muted");
+    if (!ok) t.print(link, "muted");
   });
 
   // ---- parsing + dispatch -------------------------------------------
@@ -388,8 +569,11 @@
       var names = Object.keys(registry);
       var extra = [
         "set res ", "set res original", "set blocksize ", "set format ",
-        "set method ", "set smoothing ", "set reduce ",
+        "set method boxshadow", "set method grid", "set method ascii", "set method gradient",
+        "set smoothing ", "set reduce ",
+        "set dither off", "set dither floyd", "set dither ordered",
         "export css", "export html",
+        "frame add", "frame list", "frame clear", "animate ",
         "theme green", "theme amber", "theme white", "theme matrix",
       ];
       return names.concat(extra);

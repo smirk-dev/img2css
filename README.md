@@ -29,21 +29,48 @@ Open `index.html` and type `help`. Drag an image anywhere onto the window (or
 |---|---|
 | `help` | list commands |
 | `upload` / `open` | open the file picker (drag-drop works too) |
+| `webcam` | capture a still frame from your camera and load it |
 | `info` | loaded image, target resolution, projected shadow count + size |
 | `set res <n\|original>` | output **width** in px (height auto-scales) |
 | `set blocksize <n>` | render each pixel as an `n×n` block |
 | `set format <hex\|rgb\|rgba>` | color format (`rgba` preserves partial transparency) |
-| `set method <boxshadow\|grid>` | conversion method (box-shadow is the pure default) |
+| `set method <boxshadow\|grid\|ascii\|gradient>` | conversion method (box-shadow is the pure default) |
 | `set smoothing <on\|off>` | canvas smoothing when scaling (off = crisp pixels) |
 | `set reduce <n>` | quantize color channels to multiples of `n` (smaller output) |
+| `set dither <off\|floyd\|ordered>` | error-diffusion / Bayer dithering for low-color output |
 | `convert [--force]` | build the CSS off-thread; `--force` skips the big-count confirm |
 | `preview [--force]` | render the generated CSS next to the original |
-| `copy` | copy the CSS to the clipboard |
-| `export css` / `export html` | download a `.css`, or a self-contained `.html` |
+| `stats` | size/timing breakdown of the last conversion, incl. **gzipped** size |
+| `copy` | copy the CSS (or ascii art) to the clipboard |
+| `export css` / `export html` | download a `.css`/`.txt`, or a self-contained `.html` |
+| `frame <add\|list\|clear>` | capture box-shadow frames for an animation |
+| `animate <seconds>` | build a pure-CSS `@keyframes` animation from the frames |
+| `share` | copy a link with the image **and** settings embedded in the URL |
 | `theme <green\|amber\|white\|matrix>` | switch phosphor theme |
 | `clear` | clear the scrollback |
 
 History with ↑/↓, `Tab` autocompletes command names.
+
+### Conversion methods
+
+- **`boxshadow`** (default) — single `<div>`, one `box-shadow` per pixel. The purest form.
+- **`gradient`** — single `<div>`, one stacked `linear-gradient` per row with hard
+  color stops. Often smaller than box-shadow for wide/photographic images, and the
+  output is resolution-independent.
+- **`grid`** — one `<div>` per pixel in a CSS grid (needs the markup too).
+- **`ascii`** — luminance-ramp text art (`" .:-=+*#%@"`). Not CSS — `copy`/`export`
+  give you a `.txt`. Fits the terminal aesthetic.
+
+### Animation, sharing & offline
+
+- `frame add` converts the current image and stores it; repeat for each image, then
+  `animate <seconds>` emits one element with an `@keyframes` rule that swaps the whole
+  `box-shadow` set per frame — still **no JS in the output**.
+- `share` packs the image (snapshotted at the current resolution) plus your settings
+  into the URL hash and copies the link. Opening it restores everything; nothing is
+  uploaded.
+- Served over http(s), the app registers a **service worker** + **PWA manifest**, so it
+  runs fully offline after the first load. (Skipped on `file://`.)
 
 ## Guardrails
 

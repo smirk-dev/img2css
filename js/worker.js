@@ -87,6 +87,47 @@ self.onmessage = function (e) {
     return;
   }
 
+  if (method === "ascii") {
+    /* luminance -> character ramp (dark .. bright) for a dark terminal */
+    var ramp = " .:-=+*#%@", rampN = ramp.length - 1, lines = [];
+    for (var ay = 0; ay < height; ay++) {
+      var line = "";
+      for (var ax = 0; ax < width; ax++) {
+        var ai = (ay * width + ax) * 4;
+        var aalpha = px[ai + 3];
+        if (aalpha <= alphaThreshold) { line += " "; continue; }
+        var lum = (0.299 * px[ai] + 0.587 * px[ai + 1] + 0.114 * px[ai + 2]) / 255;
+        line += ramp.charAt(Math.round(lum * rampN));
+        kept++;
+      }
+      lines.push(line);
+      reportRow(ay);
+    }
+    self.postMessage({ type: "done", method: "ascii", value: lines.join("\n"), count: kept });
+    return;
+  }
+
+  if (method === "gradient") {
+    /* one horizontal linear-gradient per row, hard stops at pixel edges */
+    var grads = [];
+    for (var gy = 0; gy < height; gy++) {
+      var gstops = [];
+      for (var gx = 0; gx < width; gx++) {
+        var gi = (gy * width + gx) * 4;
+        var ga = px[gi + 3];
+        var gcol = ga <= alphaThreshold
+          ? "transparent"
+          : formatColor(quant(px[gi], step), quant(px[gi + 1], step), quant(px[gi + 2], step), ga, format);
+        gstops.push(gcol + " " + gx * blockSize + "px", gcol + " " + (gx + 1) * blockSize + "px");
+        if (ga > alphaThreshold) kept++;
+      }
+      grads.push("linear-gradient(90deg," + gstops.join(",") + ")");
+      reportRow(gy);
+    }
+    self.postMessage({ type: "done", method: "gradient", value: grads.join(",\n    "), count: kept });
+    return;
+  }
+
   /* default: single-element box-shadow */
   var parts = [];
   for (var yy = 0; yy < height; yy++) {

@@ -317,6 +317,19 @@
       var styleEl = document.getElementById("previewStyle");
       var stageOriginal = document.getElementById("stageOriginal");
 
+      // ascii output: render the <pre> directly (no box-shadow scaling)
+      if (result.method === "ascii") {
+        styleEl.textContent = result.cssRule;
+        host.style.width = "";
+        host.style.height = "";
+        host.innerHTML = result.htmlBody;
+        if (originalUrl) {
+          stageOriginal.innerHTML =
+            '<img src="' + originalUrl + '" alt="original" style="max-width:100%;image-rendering:pixelated;">';
+        }
+        return;
+      }
+
       var outW = result.width * result.blockSize;
       var outH = result.height * result.blockSize;
       var k = Math.max(1, Math.min(10, Math.floor(360 / Math.max(outW, outH)) || 1));
@@ -457,8 +470,36 @@
       });
     }
 
+    // restore a shared image+settings from the URL hash, if present
+    function restoreFromHash() {
+      var m = /(?:^|#|&)i=([^&]+)/.exec(location.hash || "");
+      if (!m) return;
+      var payload;
+      try {
+        payload = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+      } catch (e) {
+        term.print("share link looks corrupted — ignoring it.", "warn");
+        return;
+      }
+      if (!payload || !payload.img) return;
+      var img = new Image();
+      img.onload = function () {
+        window.Converter.adoptImage(img, img.src, "shared.png", 0);
+        if (payload.s) Object.assign(window.Converter.settings, payload.s);
+        var info = window.Converter.info();
+        term.print("> restored shared image (" + info.originalW + "×" + info.originalH +
+          ") + settings from link.", "accent");
+        term.print("method " + info.settings.method + " · res " + info.settings.res +
+          " · format " + info.settings.format + ". 'convert' to rebuild.", "muted");
+        term.showOriginal(window.Converter.objectUrl);
+      };
+      img.onerror = function () { term.print("could not decode the shared image.", "warn"); };
+      img.src = payload.img;
+    }
+
     // boot output
     term.banner();
+    restoreFromHash();
     term.focus();
   }
 
